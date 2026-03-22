@@ -2,6 +2,10 @@
 
 `skill-checker` is a reusable skill for checking whether a target `SKILL.md` follows the Agent Skills specification and for generating a Chinese static HTML report.
 
+- Author: `oahcfly`
+- Version: `1.0.0`
+- License: `MIT`
+
 ## When to use
 
 Use this skill when the user asks an agent to:

@@ -1,6 +1,10 @@
 ---
 name: skill-checker
 description: Audit a target SKILL.md against the Agent Skills specification and generate a Chinese HTML report. Use when the user asks to check, audit, review, or optimize a SKILL.md file, verify whether a skill file follows specification rules, identify severe or warning issues, or produce a shareable compliance report for a SKILL.md path or a skill directory path.
+license: MIT
+metadata:
+  author: oahcfly
+  version: 1.0.0
 ---
 
 # Skill Checker
