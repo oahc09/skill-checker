@@ -79,10 +79,11 @@ class SkillCheckerTests(unittest.TestCase):
         finally:
             if report_path.exists():
                 report_path.unlink()
-        self.assertIn("Skill Checker 报告", rendered)
-        self.assertIn("发现的问题", rendered)
+        self.assertIn("Skill Checker Report", rendered)
+        self.assertIn("Findings", rendered)
+        self.assertIn("setLang(\"en\")", rendered)
         self.assertIn("semantics.empty-body", rendered)
-        self.assertIn("不通过", rendered)
+        self.assertIn("中文", rendered)
 
 
 if __name__ == "__main__":

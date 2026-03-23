@@ -1,6 +1,6 @@
 # Skill Checker
 
-`skill-checker` is a reusable skill for checking whether a target `SKILL.md` follows the Agent Skills specification and for generating a Chinese static HTML report.
+`skill-checker` is a reusable skill for checking whether a target `SKILL.md` follows the Agent Skills specification and for generating a static HTML report.
 
 - Author: `oahcfly`
 - Version: `1.0.0`
@@ -28,22 +28,36 @@ The checker focuses on `SKILL.md` only.
 
 The final result is:
 
-- `通过` when severe findings are fewer than `2`
-- `不通过` when severe findings are `2` or more
+- `pass` when severe findings are fewer than `2`
+- `fail` when severe findings are `2` or more
 
 ## Usage
 
 Run the checker with either a `SKILL.md` absolute path or a skill directory absolute path.
 Use placeholder paths in documentation so the examples stay portable across machines and repositories.
+Recommended workflow: auto-locate the `skill-checker` directory, `cd` into it, then run via relative path.
 
 ```powershell
-python scripts/check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html"
+# Auto locate this skill directory (works even if you run from another folder)
+$SkillDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $SkillDir
+
+# Run
+python .\scripts\check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html"
 ```
 
 You can also point it at a skill directory:
 
 ```powershell
-python scripts/check_skill.py "C:\path\to\skill" --out ".\reports\skill-report.html"
+$SkillDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $SkillDir
+python .\scripts\check_skill.py "C:\path\to\skill" --out ".\reports\skill-report.html"
+```
+
+For CI or strict pipelines, add:
+
+```powershell
+python .\scripts\check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html" --fail-on-audit
 ```
 
 ## Output
@@ -54,6 +68,11 @@ The script prints:
 - severe finding count
 - warning count
 - generated HTML report path
+
+Exit code behavior:
+
+- Default: exit code `0` when the command itself runs successfully, even if audit result is fail.
+- With `--fail-on-audit`: exit code `1` when severe findings are `2` or more.
 
 Generated reports under `reports/` are ignored by Git.
 

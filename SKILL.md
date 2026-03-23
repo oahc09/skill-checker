@@ -11,21 +11,36 @@ metadata:
 
 Check only `SKILL.md`.
 
-Use this skill when the user explicitly wants to检查、审计、评审或优化某个 `SKILL.md` 文件。
+Use this skill when the user explicitly wants to check, audit, review, or optimize a `SKILL.md` file.
 
 Accept either a `SKILL.md` path or a skill directory path. If the input is a directory, resolve `SKILL.md` inside it before running any checks.
 Support absolute paths directly. Prefer absolute paths when auditing skills outside the current workspace.
 
-Run the checker script:
+Run the checker script (PowerShell):
 
 ```powershell
-python scripts/check_skill.py <target-path> [--out <report-path>]
+# Auto locate this skill directory (works even if you run from another folder)
+$SkillDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $SkillDir
+
+# Run
+python .\scripts\check_skill.py <target-path> [--out <report-path>]
 ```
+
+Use `--fail-on-audit` only when a strict CI-style exit code is required.
 
 Example with absolute paths:
 
 ```powershell
-python scripts/check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html"
+$SkillDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $SkillDir
+python .\scripts\check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html"
+```
+
+Strict exit code example:
+
+```powershell
+python .\scripts\check_skill.py "C:\path\to\skill\SKILL.md" --out ".\reports\skill-report.html" --fail-on-audit
 ```
 
 Use the generated HTML report as the primary output. Summarize the overall result, the severe issue count, and the highest-priority fixes in the final response.
@@ -50,7 +65,7 @@ Treat obvious semantic failures as severe issues too, including:
 
 Treat weaker organization or thin guidance as warnings.
 
-Return `不通过` when severe issues are `2` or more. Otherwise return `通过`.
+Return a failing result when severe issues are `2` or more. Otherwise return a passing result.
 
 ## Reporting
 
@@ -58,7 +73,7 @@ Always point the user to the generated HTML report path, especially when the tar
 
 When summarizing results:
 
-1. State `通过` or `不通过`.
+1. State whether the result is passing or failing.
 2. Mention the severe issue count and warning count.
 3. Call out the first fixes the user should make.
 

@@ -84,6 +84,11 @@ def parse_args() -> argparse.Namespace:
         "--out",
         help="Path to the HTML report file. Defaults to a timestamped file in the current directory.",
     )
+    parser.add_argument(
+        "--fail-on-audit",
+        action="store_true",
+        help="Return exit code 1 when the audit result is fail (severe findings >= 2).",
+    )
     return parser.parse_args()
 
 
@@ -511,44 +516,194 @@ def finalize_result(
     )
 
 
+RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
+    "input.target-not-found": (
+        "Target path is unavailable, so the audit cannot start.",
+        "Provide an existing SKILL.md absolute path or a skill directory path that contains SKILL.md.",
+    ),
+    "input.audit-blocked": (
+        "The audit is blocked and marked as fail due to an input or parsing issue.",
+        "Fix the blocking issue and run the check again.",
+    ),
+    "input.read-failed": (
+        "Failed to read the target SKILL.md.",
+        "Ensure the file exists, uses UTF-8 encoding, and is readable in the current environment.",
+    ),
+    "spec.frontmatter-missing": (
+        "SKILL.md is missing a valid YAML frontmatter block.",
+        "Add a frontmatter block wrapped by `---` and include at least `name` and `description`.",
+    ),
+    "spec.frontmatter-invalid": (
+        "The frontmatter has structural YAML errors and cannot be parsed reliably.",
+        "Fix indentation, duplicate keys, nested formats, and field syntax.",
+    ),
+    "spec.unknown-field": (
+        "Frontmatter contains a field not defined by the specification.",
+        "Remove the field or replace it with a supported top-level field.",
+    ),
+    "spec.required-name": (
+        "Frontmatter is missing required field `name`, or it is empty.",
+        "Add a valid skill name using lowercase letters, digits, and hyphens.",
+    ),
+    "spec.name-format": (
+        "`name` does not match the required naming pattern.",
+        "Use lowercase letters, digits, and hyphens, for example `skill-checker`.",
+    ),
+    "spec.name-directory-match": (
+        "`name` does not match the skill directory name.",
+        "Keep the directory name exactly aligned with `name`.",
+    ),
+    "spec.required-description": (
+        "Frontmatter is missing required field `description`, or it is empty.",
+        "Add a description that explains what the skill does and when to use it.",
+    ),
+    "spec.description-length": (
+        "`description` exceeds 1024 characters.",
+        "Shorten it to capability summary and trigger context only.",
+    ),
+    "spec.license-type": (
+        "`license` must be a string.",
+        "Change `license` to a single-line string value.",
+    ),
+    "spec.compatibility-type": (
+        "`compatibility` must be a string.",
+        "Change `compatibility` to a single-line string value.",
+    ),
+    "spec.allowed-tools-type": (
+        "`allowed-tools` must be a string.",
+        "Change `allowed-tools` to a single-line string value.",
+    ),
+    "spec.metadata-type": (
+        "`metadata` must be a key-value mapping.",
+        "Change `metadata` to a simple mapping with string keys and values.",
+    ),
+    "spec.metadata-values": (
+        "All `metadata` keys and values must be strings.",
+        "Keep only string key-value pairs in `metadata`.",
+    ),
+    "semantics.description-too-short": (
+        "`description` is too short to express capability and trigger context.",
+        "Expand it to explain what problem the skill solves and when to trigger it.",
+    ),
+    "semantics.description-trigger-context": (
+        "`description` does not clearly state when this skill should be used.",
+        "Add trigger wording such as `Use when ...`.",
+    ),
+    "semantics.empty-body": (
+        "SKILL.md body is empty and cannot guide another agent.",
+        "Add workflow, constraints, and expected output guidance.",
+    ),
+    "semantics.body-too-thin": (
+        "SKILL.md body is too thin to be practically executable.",
+        "Add phased workflow, key principles, and concrete output expectations.",
+    ),
+    "semantics.body-guidance-thin": (
+        "The body exists, but execution guidance is weak.",
+        "Add step-by-step instructions, expected outputs, examples, or constraints.",
+    ),
+    "semantics.body-structure": (
+        "The body has weak structure and is hard to scan.",
+        "Use headings and short sections to organize workflow and rules.",
+    ),
+}
+
+
+def map_status_text(result: AuditResult) -> tuple[str, str]:
+    is_fail = result.severe_count >= 2
+    return ("Fail", "不通过") if is_fail else ("Pass", "通过")
+
+
+def map_resolved_from_text(value: str) -> tuple[str, str]:
+    mapping = {
+        "file": ("File", "文件"),
+        "directory": ("Directory", "目录"),
+        "invalid": ("Invalid", "无效"),
+    }
+    return mapping.get(value, (value, value))
+
+
+def get_finding_localized_text(finding: Finding) -> tuple[str, str]:
+    fallback_en_message = finding.message
+    fallback_en_suggestion = finding.suggestion
+    if finding.rule_id in RULE_TRANSLATIONS:
+        return RULE_TRANSLATIONS[finding.rule_id]
+    return fallback_en_message, fallback_en_suggestion
+
+
 def build_html_report(result: AuditResult) -> str:
-    title = "Skill Checker 报告"
+    title_en = "Skill Checker Report"
+    title_zh = "Skill Checker 报告"
+    status_en, status_zh = map_status_text(result)
+    resolved_en, resolved_zh = map_resolved_from_text(result.resolved_from)
+
     summary_items = [
-        ("目标路径", str(result.target_path)),
-        ("解析来源", result.resolved_from),
-        ("检查文件", str(result.skill_path) if result.skill_path else "未解析"),
-        ("检查时间", result.checked_at),
-        ("最终结论", result.status),
-        ("严重问题", str(result.severe_count)),
-        ("一般问题", str(result.warning_count)),
+        ("Target Path", "目标路径", str(result.target_path), str(result.target_path)),
+        ("Resolved From", "解析来源", resolved_en, resolved_zh),
+        (
+            "Checked File",
+            "检查文件",
+            str(result.skill_path) if result.skill_path else "Unresolved",
+            str(result.skill_path) if result.skill_path else "未解析",
+        ),
+        ("Checked At", "检查时间", result.checked_at, result.checked_at),
+        ("Final Result", "最终结论", status_en, status_zh),
+        ("Severe Findings", "严重问题", str(result.severe_count), str(result.severe_count)),
+        ("Warnings", "一般问题", str(result.warning_count), str(result.warning_count)),
     ]
     summary_html = "".join(
-        f"<li><strong>{html.escape(label)}:</strong> {html.escape(value)}</li>"
-        for label, value in summary_items
+        "<li>"
+        f"<strong><span class='lang lang-en'>{html.escape(label_en)}:</span>"
+        f"<span class='lang lang-zh'>{html.escape(label_zh)}:</span></strong> "
+        f"<span class='lang lang-en'>{html.escape(value_en)}</span>"
+        f"<span class='lang lang-zh'>{html.escape(value_zh)}</span>"
+        "</li>"
+        for label_en, label_zh, value_en, value_zh in summary_items
     )
+
     findings_html = ""
     if result.findings:
         cards: list[str] = []
         for finding in result.findings:
+            message_en, suggestion_en = get_finding_localized_text(finding)
+            severity_en = "severe" if finding.severity == "severe" else "warning"
+            severity_zh = "严重" if finding.severity == "severe" else "一般"
             cards.append(
                 "<article class='finding'>"
-                f"<div class='finding-head'><span class='badge {html.escape(finding.severity)}'>{html.escape(finding.severity)}</span>"
-                f"<code>{html.escape(finding.rule_id)}</code></div>"
-                f"<h3>{html.escape(finding.message)}</h3>"
-                f"<p><strong>证据:</strong> {html.escape(finding.evidence)}</p>"
-                f"<p><strong>建议:</strong> {html.escape(finding.suggestion)}</p>"
+                "<div class='finding-head'>"
+                f"<span class='badge {html.escape(finding.severity)}'>"
+                f"<span class='lang lang-en'>{html.escape(severity_en)}</span>"
+                f"<span class='lang lang-zh'>{html.escape(severity_zh)}</span>"
+                "</span>"
+                f"<code>{html.escape(finding.rule_id)}</code>"
+                "</div>"
+                "<h3>"
+                f"<span class='lang lang-en'>{html.escape(message_en)}</span>"
+                f"<span class='lang lang-zh'>{html.escape(finding.message)}</span>"
+                "</h3>"
+                "<p>"
+                "<strong><span class='lang lang-en'>Evidence:</span><span class='lang lang-zh'>证据:</span></strong> "
+                f"{html.escape(finding.evidence)}"
+                "</p>"
+                "<p>"
+                "<strong><span class='lang lang-en'>Suggestion:</span><span class='lang lang-zh'>建议:</span></strong> "
+                f"<span class='lang lang-en'>{html.escape(suggestion_en)}</span>"
+                f"<span class='lang lang-zh'>{html.escape(finding.suggestion)}</span>"
+                "</p>"
                 "</article>"
             )
         findings_html = "".join(cards)
     else:
-        findings_html = "<p class='empty'>未发现问题。</p>"
+        findings_html = (
+            "<p class='empty'><span class='lang lang-en'>No findings.</span>"
+            "<span class='lang lang-zh'>未发现问题。</span></p>"
+        )
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(title)}</title>
+  <title>{html.escape(title_en)}</title>
   <style>
     :root {{
       color-scheme: light;
@@ -588,6 +743,39 @@ def build_html_report(result: AuditResult) -> str:
     .hero {{
       padding: 28px;
       margin-bottom: 24px;
+      position: relative;
+    }}
+    .lang-switch {{
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff8ec;
+      overflow: hidden;
+    }}
+    .lang-switch button {{
+      border: 0;
+      background: transparent;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--muted);
+    }}
+    .lang-switch button.active {{
+      background: var(--accent);
+      color: #ffffff;
+    }}
+    .lang {{
+      display: none;
+    }}
+    html[data-lang="en"] .lang-en {{
+      display: inline;
+    }}
+    html[data-lang="zh"] .lang-zh {{
+      display: inline;
     }}
     h1 {{
       margin: 0 0 8px;
@@ -686,33 +874,61 @@ def build_html_report(result: AuditResult) -> str:
 <body>
   <main class="shell">
     <section class="hero">
-      <h1>{html.escape(title)}</h1>
-      <p>根据 Agent Skills specification 对目标 `SKILL.md` 进行静态规范与语义质量检查。</p>
+      <div class="lang-switch" aria-label="Language switch">
+        <button id="btn-en" class="active" type="button">EN</button>
+        <button id="btn-zh" type="button">中文</button>
+      </div>
+      <h1><span class="lang lang-en">{html.escape(title_en)}</span><span class="lang lang-zh">{html.escape(title_zh)}</span></h1>
+      <p>
+        <span class="lang lang-en">Static specification and semantic checks for a target `SKILL.md` based on Agent Skills specification.</span>
+        <span class="lang lang-zh">根据 Agent Skills specification 对目标 `SKILL.md` 进行静态规范与语义质量检查。</span>
+      </p>
       <div class="status-row">
-        <div class="status-pill {'fail' if result.status == '不通过' else ''}">{html.escape(result.status)}</div>
-        <div class="status-pill">严重问题 {result.severe_count}</div>
-        <div class="status-pill">一般问题 {result.warning_count}</div>
+        <div class="status-pill {'fail' if result.severe_count >= 2 else ''}">
+          <span class="lang lang-en">{html.escape(status_en)}</span>
+          <span class="lang lang-zh">{html.escape(status_zh)}</span>
+        </div>
+        <div class="status-pill">
+          <span class="lang lang-en">Severe {result.severe_count}</span>
+          <span class="lang lang-zh">严重问题 {result.severe_count}</span>
+        </div>
+        <div class="status-pill">
+          <span class="lang lang-en">Warnings {result.warning_count}</span>
+          <span class="lang lang-zh">一般问题 {result.warning_count}</span>
+        </div>
       </div>
     </section>
     <section class="grid">
       <section class="panel">
-        <h2>摘要</h2>
+        <h2><span class="lang lang-en">Summary</span><span class="lang lang-zh">摘要</span></h2>
         <ul>{summary_html}</ul>
       </section>
       <section class="panel">
-        <h2>修复优先级</h2>
+        <h2><span class="lang lang-en">Fix Priority</span><span class="lang lang-zh">修复优先级</span></h2>
         <ul>
-          <li>先处理所有严重问题，再处理一般问题。</li>
-          <li>若严重问题达到 2 个及以上，本次检查结论为不通过。</li>
-          <li>重点关注 `name`、`description`、frontmatter 结构和正文可执行性。</li>
+          <li><span class="lang lang-en">Fix all severe findings before warnings.</span><span class="lang lang-zh">先处理所有严重问题，再处理一般问题。</span></li>
+          <li><span class="lang lang-en">The audit fails when severe findings reach 2 or more.</span><span class="lang lang-zh">若严重问题达到 2 个及以上，本次检查结论为不通过。</span></li>
+          <li><span class="lang lang-en">Prioritize `name`, `description`, frontmatter structure, and executable body guidance.</span><span class="lang lang-zh">重点关注 `name`、`description`、frontmatter 结构和正文可执行性。</span></li>
         </ul>
       </section>
     </section>
     <section class="panel" style="margin-top: 24px;">
-      <h2>发现的问题</h2>
+      <h2><span class="lang lang-en">Findings</span><span class="lang lang-zh">发现的问题</span></h2>
       {findings_html}
     </section>
   </main>
+  <script>
+    function setLang(lang) {{
+      document.documentElement.setAttribute("data-lang", lang);
+      const en = document.getElementById("btn-en");
+      const zh = document.getElementById("btn-zh");
+      en.classList.toggle("active", lang === "en");
+      zh.classList.toggle("active", lang === "zh");
+    }}
+    document.getElementById("btn-en").addEventListener("click", function () {{ setLang("en"); }});
+    document.getElementById("btn-zh").addEventListener("click", function () {{ setLang("zh"); }});
+    setLang("en");
+  </script>
 </body>
 </html>
 """
@@ -738,7 +954,9 @@ def main() -> int:
     print(f"严重问题: {result.severe_count}")
     print(f"一般问题: {result.warning_count}")
     print(f"HTML 报告: {report_path}")
-    return 1 if result.status == "不通过" else 0
+    if args.fail_on_audit and result.status == "不通过":
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
