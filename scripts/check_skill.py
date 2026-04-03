@@ -714,8 +714,12 @@ def build_html_report(result: AuditResult) -> str:
       --border: #d6c9b7;
       --accent: #1f6f78;
       --accent-soft: #d7ece8;
+      --success: #217346;
+      --success-soft: #dcf4e4;
       --danger: #a13232;
       --danger-soft: #f8dddd;
+      --pill-neutral-bg: #efe6d8;
+      --pill-neutral-text: #5f5347;
       --warn: #8c5f12;
       --warn-soft: #fdecc8;
       --shadow: 0 18px 40px rgba(31, 26, 20, 0.08);
@@ -800,8 +804,12 @@ def build_html_report(result: AuditResult) -> str:
       border-radius: 999px;
       padding: 10px 14px;
       font-weight: 700;
-      background: var(--accent-soft);
-      color: var(--accent);
+      background: var(--pill-neutral-bg);
+      color: var(--pill-neutral-text);
+    }}
+    .status-pill.pass {{
+      background: var(--success-soft);
+      color: var(--success);
     }}
     .status-pill.fail {{
       background: var(--danger-soft);
@@ -884,7 +892,7 @@ def build_html_report(result: AuditResult) -> str:
         <span class="lang lang-zh">根据 Agent Skills specification 对目标 `SKILL.md` 进行静态规范与语义质量检查。</span>
       </p>
       <div class="status-row">
-        <div class="status-pill {'fail' if result.severe_count >= 2 else ''}">
+        <div class="status-pill {'fail' if result.severe_count >= 2 else 'pass'}">
           <span class="lang lang-en">{html.escape(status_en)}</span>
           <span class="lang lang-zh">{html.escape(status_zh)}</span>
         </div>

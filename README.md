@@ -3,7 +3,7 @@
 `skill-checker` is a reusable skill for checking whether a target `SKILL.md` follows the Agent Skills specification and for generating a static HTML report.
 
 - Author: `oahcfly`
-- Version: `1.0.0`
+- Version: `1.0.2`
 - License: `MIT`
 
 ## When to use

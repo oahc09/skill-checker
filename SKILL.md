@@ -4,7 +4,7 @@ description: Audit a target SKILL.md against the Agent Skills specification and 
 license: MIT
 metadata:
   author: oahcfly
-  version: 1.0.0
+  version: 1.0.2
 ---
 
 # Skill Checker
