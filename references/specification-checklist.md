@@ -5,10 +5,12 @@ Use this checklist to keep the checker aligned with the Agent Skills specificati
 ## Hard checks
 
 - Require YAML frontmatter delimited by `---` at the top of the file.
-- Require `name` and `description`.
+- Require `name`, `description`, `license`, and `metadata`.
 - Accept only these top-level frontmatter fields:
   - `name`
   - `description`
+  - `description_en`
+  - `description_zh`
   - `license`
   - `compatibility`
   - `metadata`
@@ -16,12 +18,14 @@ Use this checklist to keep the checker aligned with the Agent Skills specificati
 - Require `name` to use lowercase letters, digits, and hyphens only.
 - Require `name` to match the parent directory name when the directory is known.
 - Require `description` to be non-empty and at most 1024 characters.
-- Require `metadata`, when present, to be a simple string-to-string mapping.
+- Require `metadata` to be a simple string-to-string mapping.
+- Require `metadata.author` and `metadata.version` to be present and non-empty strings.
 
 ## Semantic checks
 
 - Mark as severe when `description` is too short to express capability and trigger context.
 - Mark as severe when `description` does not clearly say when the skill should be used.
+- Mark as warning when recommended bilingual fields `description_en` or `description_zh` are missing or empty.
 - Mark as severe when the body is empty or too thin to guide execution.
 - Mark as warning when the body exists but has weak structure or thin execution guidance.
 
