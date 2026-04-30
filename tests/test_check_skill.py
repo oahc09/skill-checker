@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
 import sys
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "scripts" / "check_skill.py"
-SPEC = importlib.util.spec_from_file_location("check_skill", MODULE_PATH)
-MODULE = importlib.util.module_from_spec(SPEC)
-assert SPEC and SPEC.loader
-sys.modules[SPEC.name] = MODULE
-SPEC.loader.exec_module(MODULE)
+sys.path.insert(0, str(ROOT))
+import scripts.check_skill as MODULE
 
 
 FIXTURES = ROOT / "tests" / "fixtures"
