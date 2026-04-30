@@ -12,6 +12,8 @@ from typing import Any
 TOP_LEVEL_FIELDS = {
     "name",
     "description",
+    "description_en",
+    "description_zh",
     "license",
     "compatibility",
     "metadata",
@@ -141,7 +143,7 @@ def parse_frontmatter(frontmatter: str) -> dict[str, Any]:
             continue
         if line.startswith((" ", "\t")):
             raise ParseError(f"顶层字段缩进非法: `{line}`")
-        match = re.match(r"^([A-Za-z0-9-]+):(.*)$", line)
+        match = re.match(r"^([A-Za-z0-9_-]+):(.*)$", line)
         if not match:
             raise ParseError(f"frontmatter 行格式非法: `{line}`")
         key = match.group(1)
@@ -293,7 +295,41 @@ def validate_frontmatter(
                 "在描述中加入触发语句，例如 `Use when ...` 或中文的 `当需要...时使用`。",
             )
 
-    for optional_field in ("license", "compatibility", "allowed-tools"):
+    for recommended_field in ("description_en", "description_zh"):
+        recommended_value = data.get(recommended_field)
+        if recommended_value is None or (
+            isinstance(recommended_value, str) and not recommended_value.strip()
+        ):
+            add_finding(
+                findings,
+                f"semantics.recommended-{recommended_field}",
+                "warning",
+                f"推荐字段 `{recommended_field}` 缺失或为空。",
+                str(recommended_value),
+                f"补充 `{recommended_field}`，用于提供双语描述，提升跨语言可读性。",
+            )
+        elif not isinstance(recommended_value, str):
+            add_finding(
+                findings,
+                f"spec.{recommended_field}-type",
+                "severe",
+                f"`{recommended_field}` 必须是字符串。",
+                repr(recommended_value),
+                f"将 `{recommended_field}` 改为单行字符串。",
+            )
+
+    license_value = data.get("license")
+    if not isinstance(license_value, str) or not license_value.strip():
+        add_finding(
+            findings,
+            "spec.required-license",
+            "severe",
+            "frontmatter 缺少必填字段 `license`，或其值为空。",
+            str(license_value),
+            "补充 `license`，并使用单行字符串，例如 `MIT` 或 `Apache-2.0`。",
+        )
+
+    for optional_field in ("compatibility", "allowed-tools"):
         if optional_field in data and not isinstance(data[optional_field], str):
             add_finding(
                 findings,
@@ -303,29 +339,66 @@ def validate_frontmatter(
                 repr(data[optional_field]),
                 f"将 `{optional_field}` 改为单行字符串。",
             )
+    if "license" in data and not isinstance(data["license"], str):
+        add_finding(
+            findings,
+            "spec.license-type",
+            "severe",
+            "`license` 必须是字符串。",
+            repr(data["license"]),
+            "将 `license` 改为单行字符串。",
+        )
 
     metadata = data.get("metadata")
-    if metadata is not None:
-        if not isinstance(metadata, dict):
+    if metadata is None:
+        add_finding(
+            findings,
+            "spec.required-metadata",
+            "severe",
+            "frontmatter 缺少必填字段 `metadata`。",
+            str(metadata),
+            "补充 `metadata` 映射，并至少包含 `author` 与 `version` 字段。",
+        )
+    elif not isinstance(metadata, dict):
+        add_finding(
+            findings,
+            "spec.metadata-type",
+            "severe",
+            "`metadata` 必须是键值对映射。",
+            repr(metadata),
+            "将 `metadata` 改为简单映射，且所有键和值都使用字符串。",
+        )
+    else:
+        for metadata_key, metadata_value in metadata.items():
+            if not isinstance(metadata_key, str) or not isinstance(metadata_value, str):
+                add_finding(
+                    findings,
+                    "spec.metadata-values",
+                    "severe",
+                    "`metadata` 中的键和值都必须是字符串。",
+                    f"{metadata_key}={metadata_value}",
+                    "仅保留字符串类型的 metadata 键值对。",
+                )
+        author = metadata.get("author")
+        if not isinstance(author, str) or not author.strip():
             add_finding(
                 findings,
-                "spec.metadata-type",
+                "spec.required-metadata-author",
                 "severe",
-                "`metadata` 必须是键值对映射。",
-                repr(metadata),
-                "将 `metadata` 改为简单映射，且所有键和值都使用字符串。",
+                "`metadata.author` 为必填字段，且必须是非空字符串。",
+                str(author),
+                "补充 `metadata.author`，例如组织名或维护者标识。",
             )
-        else:
-            for metadata_key, metadata_value in metadata.items():
-                if not isinstance(metadata_key, str) or not isinstance(metadata_value, str):
-                    add_finding(
-                        findings,
-                        "spec.metadata-values",
-                        "severe",
-                        "`metadata` 中的键和值都必须是字符串。",
-                        f"{metadata_key}={metadata_value}",
-                        "仅保留字符串类型的 metadata 键值对。",
-                    )
+        version = metadata.get("version")
+        if not isinstance(version, str) or not version.strip():
+            add_finding(
+                findings,
+                "spec.required-metadata-version",
+                "severe",
+                "`metadata.version` 为必填字段，且必须是非空字符串。",
+                str(version),
+                "补充 `metadata.version`，建议使用语义化版本号字符串，如 `1.0.0`。",
+            )
 
     body_text = body.strip()
     body_lines = [line.strip() for line in body.splitlines() if line.strip()]
@@ -557,6 +630,18 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
         "Frontmatter is missing required field `description`, or it is empty.",
         "Add a description that explains what the skill does and when to use it.",
     ),
+    "spec.description_en-type": (
+        "`description_en` must be a string.",
+        "Change `description_en` to a single-line string value.",
+    ),
+    "spec.description_zh-type": (
+        "`description_zh` must be a string.",
+        "Change `description_zh` to a single-line string value.",
+    ),
+    "spec.required-license": (
+        "Frontmatter is missing required field `license`, or it is empty.",
+        "Add a single-line `license` string such as `MIT` or `Apache-2.0`.",
+    ),
     "spec.description-length": (
         "`description` exceeds 1024 characters.",
         "Shorten it to capability summary and trigger context only.",
@@ -581,6 +666,18 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
         "All `metadata` keys and values must be strings.",
         "Keep only string key-value pairs in `metadata`.",
     ),
+    "spec.required-metadata": (
+        "Frontmatter is missing required field `metadata`.",
+        "Add a `metadata` mapping and include at least `author` and `version`.",
+    ),
+    "spec.required-metadata-author": (
+        "`metadata.author` is required and must be a non-empty string.",
+        "Add `metadata.author` with the maintainer or organization identifier.",
+    ),
+    "spec.required-metadata-version": (
+        "`metadata.version` is required and must be a non-empty string.",
+        "Add `metadata.version` as a version string, for example `1.0.0`.",
+    ),
     "semantics.description-too-short": (
         "`description` is too short to express capability and trigger context.",
         "Expand it to explain what problem the skill solves and when to trigger it.",
@@ -588,6 +685,14 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
     "semantics.description-trigger-context": (
         "`description` does not clearly state when this skill should be used.",
         "Add trigger wording such as `Use when ...`.",
+    ),
+    "semantics.recommended-description_en": (
+        "Recommended field `description_en` is missing or empty.",
+        "Add `description_en` to provide an English description for bilingual readability.",
+    ),
+    "semantics.recommended-description_zh": (
+        "Recommended field `description_zh` is missing or empty.",
+        "Add `description_zh` to provide a Chinese description for bilingual readability.",
     ),
     "semantics.empty-body": (
         "SKILL.md body is empty and cannot guide another agent.",

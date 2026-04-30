@@ -1,6 +1,10 @@
 ---
 name: threshold-two-severe
 description: Helpful skill.
+license: MIT
+metadata:
+  author: qa-team
+  version: "0.9.0"
 extra-field: true
 ---
 

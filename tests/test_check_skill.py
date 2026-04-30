@@ -70,6 +70,29 @@ class SkillCheckerTests(unittest.TestCase):
         self.assertEqual(result.status, "不通过")
         self.assertTrue(any(item.rule_id == "spec.frontmatter-invalid" for item in result.findings))
 
+    def test_license_and_metadata_keys_are_required(self):
+        result = self.audit_fixture("spec-fail-missing-required-fields")
+        self.assertEqual(result.status, "不通过")
+        self.assertTrue(any(item.rule_id == "spec.required-license" for item in result.findings))
+        self.assertTrue(
+            any(item.rule_id == "spec.required-metadata-version" for item in result.findings)
+        )
+
+    def test_recommended_bilingual_descriptions_emit_warnings(self):
+        result = self.audit_fixture("threshold-one-severe")
+        self.assertTrue(
+            any(
+                item.rule_id == "semantics.recommended-description_en"
+                for item in result.findings
+            )
+        )
+        self.assertTrue(
+            any(
+                item.rule_id == "semantics.recommended-description_zh"
+                for item in result.findings
+            )
+        )
+
     def test_html_report_contains_summary_and_findings(self):
         result = self.audit_fixture("semantic-fail-empty-body")
         report_path = ROOT / "tests" / "_report-test.html"
