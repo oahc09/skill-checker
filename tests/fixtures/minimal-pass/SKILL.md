@@ -7,6 +7,8 @@ license: MIT
 metadata:
   author: skill-team
   version: "1.0.0"
+  last-updated: "2026-07-25"
+  keywords: audit, skill, review
 ---
 
 # Minimal Pass

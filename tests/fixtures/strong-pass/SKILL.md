@@ -7,6 +7,8 @@ license: Apache-2.0
 metadata:
   author: skill-team
   version: "1.2.0"
+  last-updated: "2026-07-25"
+  keywords: creative coding, audit, review
   category: review
 compatibility: generic-agent
 allowed-tools: shell_command apply_patch

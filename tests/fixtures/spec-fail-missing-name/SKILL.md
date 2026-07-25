@@ -4,6 +4,8 @@ license: MIT
 metadata:
   author: qa-team
   version: "1.0.0"
+  last-updated: "2026-07-25"
+  keywords: validation, missing name
 ---
 
 # Missing Name

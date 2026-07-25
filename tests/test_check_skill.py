@@ -72,6 +72,18 @@ class SkillCheckerTests(unittest.TestCase):
         self.assertTrue(
             any(item.rule_id == "spec.required-metadata-version" for item in result.findings)
         )
+        self.assertTrue(
+            any(
+                item.rule_id == "spec.required-metadata-last-updated"
+                for item in result.findings
+            )
+        )
+        self.assertTrue(
+            any(
+                item.rule_id == "spec.required-metadata-keywords"
+                for item in result.findings
+            )
+        )
 
     def test_recommended_bilingual_descriptions_emit_warnings(self):
         result = self.audit_fixture("threshold-one-severe")
@@ -84,6 +96,15 @@ class SkillCheckerTests(unittest.TestCase):
         self.assertTrue(
             any(
                 item.rule_id == "semantics.recommended-description_zh"
+                for item in result.findings
+            )
+        )
+
+    def test_invalid_last_updated_date_is_severe(self):
+        result = self.audit_fixture("spec-fail-invalid-last-updated")
+        self.assertTrue(
+            any(
+                item.rule_id == "spec.metadata-last-updated-format"
                 for item in result.findings
             )
         )

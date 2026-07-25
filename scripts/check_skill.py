@@ -357,7 +357,7 @@ def validate_frontmatter(
             "severe",
             "frontmatter 缺少必填字段 `metadata`。",
             str(metadata),
-            "补充 `metadata` 映射，并至少包含 `author` 与 `version` 字段。",
+            "补充 `metadata` 映射，并包含 `author`、`version`、`last-updated` 与 `keywords` 字段。",
         )
     elif not isinstance(metadata, dict):
         add_finding(
@@ -398,6 +398,41 @@ def validate_frontmatter(
                 "`metadata.version` 为必填字段，且必须是非空字符串。",
                 str(version),
                 "补充 `metadata.version`，建议使用语义化版本号字符串，如 `1.0.0`。",
+            )
+        last_updated = metadata.get("last-updated")
+        if not isinstance(last_updated, str) or not last_updated.strip():
+            add_finding(
+                findings,
+                "spec.required-metadata-last-updated",
+                "severe",
+                "`metadata.last-updated` 为必填字段，且必须是非空字符串。",
+                str(last_updated),
+                "补充 `metadata.last-updated`，使用 `YYYY-MM-DD` 格式记录最近更新时间。",
+            )
+        else:
+            last_updated_text = last_updated.strip()
+            try:
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", last_updated_text):
+                    raise ValueError
+                datetime.strptime(last_updated_text, "%Y-%m-%d")
+            except ValueError:
+                add_finding(
+                    findings,
+                    "spec.metadata-last-updated-format",
+                    "severe",
+                    "`metadata.last-updated` 必须是合法的 `YYYY-MM-DD` 日期。",
+                    last_updated_text,
+                    "使用合法日期，例如 `2026-07-25`。",
+                )
+        keywords = metadata.get("keywords")
+        if not isinstance(keywords, str) or not keywords.strip():
+            add_finding(
+                findings,
+                "spec.required-metadata-keywords",
+                "severe",
+                "`metadata.keywords` 为必填字段，且必须是非空字符串。",
+                str(keywords),
+                "补充 `metadata.keywords`，使用逗号分隔技能关键词。",
             )
 
     body_text = body.strip()
@@ -668,7 +703,7 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
     ),
     "spec.required-metadata": (
         "Frontmatter is missing required field `metadata`.",
-        "Add a `metadata` mapping and include at least `author` and `version`.",
+        "Add a `metadata` mapping with `author`, `version`, `last-updated`, and `keywords`.",
     ),
     "spec.required-metadata-author": (
         "`metadata.author` is required and must be a non-empty string.",
@@ -677,6 +712,18 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
     "spec.required-metadata-version": (
         "`metadata.version` is required and must be a non-empty string.",
         "Add `metadata.version` as a version string, for example `1.0.0`.",
+    ),
+    "spec.required-metadata-last-updated": (
+        "`metadata.last-updated` is required and must be a non-empty string.",
+        "Add `metadata.last-updated` as a `YYYY-MM-DD` date.",
+    ),
+    "spec.metadata-last-updated-format": (
+        "`metadata.last-updated` must be a valid `YYYY-MM-DD` date.",
+        "Use a valid date such as `2026-07-25`.",
+    ),
+    "spec.required-metadata-keywords": (
+        "`metadata.keywords` is required and must be a non-empty string.",
+        "Add comma-separated skill keywords to `metadata.keywords`.",
     ),
     "semantics.description-too-short": (
         "`description` is too short to express capability and trigger context.",

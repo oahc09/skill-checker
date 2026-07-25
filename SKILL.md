@@ -4,7 +4,9 @@ description: Audit a target SKILL.md against the Agent Skills specification and 
 license: MIT
 metadata:
   author: oahcfly
-  version: 1.0.2
+  version: 1.0.4
+  last-updated: '2026-07-25'
+  keywords: skill audit, SKILL.md, specification, compliance
 ---
 
 # Skill Checker

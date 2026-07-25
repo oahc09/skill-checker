@@ -19,7 +19,9 @@ Use this checklist to keep the checker aligned with the Agent Skills specificati
 - Require `name` to match the parent directory name when the directory is known.
 - Require `description` to be non-empty and at most 1024 characters.
 - Require `metadata` to be a simple string-to-string mapping.
-- Require `metadata.author` and `metadata.version` to be present and non-empty strings.
+- Require `metadata.author`, `metadata.version`, `metadata.last-updated`, and `metadata.keywords` to be present and non-empty strings.
+- Require `metadata.last-updated` to use a valid `YYYY-MM-DD` date.
+- Store `metadata.keywords` as a comma-separated string of skill keywords.
 
 ## Semantic checks
 
