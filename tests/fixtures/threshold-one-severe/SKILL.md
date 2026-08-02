@@ -5,6 +5,8 @@ license: MIT
 metadata:
   author: qa-team
   version: "0.9.0"
+  last-updated: "2026-07-25"
+  keywords: documentation, audit
 ---
 
 # Threshold One Severe
