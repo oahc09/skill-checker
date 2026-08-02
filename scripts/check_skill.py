@@ -8,6 +8,21 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.security_scan import (
+        ScanCoverage,
+        SecurityFinding,
+        SecurityScanResult,
+        scan_skill_directory,
+    )
+except ModuleNotFoundError:
+    from security_scan import (  # type: ignore[no-redef]
+        ScanCoverage,
+        SecurityFinding,
+        SecurityScanResult,
+        scan_skill_directory,
+    )
+
 
 TOP_LEVEL_FIELDS = {
     "name",
@@ -20,6 +35,8 @@ TOP_LEVEL_FIELDS = {
     "allowed-tools",
 }
 NAME_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+MAX_SKILL_LINES = 500
+MAX_BODY_TOKENS = 5000
 USE_MARKERS = (
     "use when",
     "when ",
@@ -71,10 +88,57 @@ class AuditResult:
     warning_count: int
     findings: list[Finding]
     checked_at: str
+    security_decision: str
+    security_findings: tuple[SecurityFinding, ...]
+    security_coverage: ScanCoverage
 
 
 class ParseError(ValueError):
     pass
+
+
+def estimate_token_count(text: str) -> int:
+    """Estimate tokens locally without adding a tokenizer dependency."""
+    units = re.findall(r"[A-Za-z0-9_]+|[^\sA-Za-z0-9_]", text)
+    return sum(
+        (len(unit) + 3) // 4 if re.fullmatch(r"[A-Za-z0-9_]+", unit) else 1
+        for unit in units
+    )
+
+
+def find_file_reference_issues(body: str) -> list[str]:
+    references = set(
+        re.findall(r"\]\(\s*<?([^\s)>]+)>?(?:\s+[^)]*)?\)", body)
+    )
+    references.update(
+        re.findall(
+            r"(?<![\w./-])(?:scripts|references|assets)[\\/][^\s`\"')>]+",
+            body,
+        )
+    )
+
+    issues: list[str] = []
+    for reference in sorted(references):
+        cleaned = reference.strip("<>").split("#", 1)[0].split("?", 1)[0]
+        if not cleaned or cleaned.startswith("#"):
+            continue
+        if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", cleaned):
+            continue
+
+        normalized = cleaned.replace("\\", "/")
+        relative = normalized[2:] if normalized.startswith("./") else normalized
+        if (
+            normalized.startswith(("/", "~/", "../"))
+            or re.match(r"^[A-Za-z]:/", normalized)
+            or "/../" in normalized
+        ):
+            issues.append(f"非 Skill 根目录相对路径: {reference}")
+            continue
+
+        parts = [part for part in relative.split("/") if part and part != "."]
+        if len(parts) > 2:
+            issues.append(f"引用层级过深: {reference}")
+    return issues
 
 
 def parse_args() -> argparse.Namespace:
@@ -209,6 +273,7 @@ def validate_frontmatter(
     body: str,
     skill_file: Path,
     skill_dir: Path,
+    raw_text: str,
 ) -> list[Finding]:
     findings: list[Finding] = []
 
@@ -437,6 +502,29 @@ def validate_frontmatter(
 
     body_text = body.strip()
     body_lines = [line.strip() for line in body.splitlines() if line.strip()]
+    total_lines = len(raw_text.splitlines())
+    estimated_tokens = estimate_token_count(body)
+    if total_lines >= MAX_SKILL_LINES or estimated_tokens >= MAX_BODY_TOKENS:
+        add_finding(
+            findings,
+            "quality.progressive-disclosure-budget",
+            "warning",
+            "`SKILL.md` 超出渐进披露的推荐规模。",
+            f"lines={total_lines}, estimated_body_tokens={estimated_tokens}",
+            "建议将 `SKILL.md` 保持在 500 行以内、正文约 5000 tokens 以内，并把详细内容拆分到引用文件。",
+        )
+
+    reference_issues = find_file_reference_issues(body)
+    if reference_issues:
+        add_finding(
+            findings,
+            "quality.file-references",
+            "warning",
+            "文件引用未遵循 Skill 根目录相对路径或层级过深的建议。",
+            "; ".join(reference_issues[:5]),
+            "使用从 Skill 根目录开始的相对路径，并将引用控制在一层目录内，例如 `references/REFERENCE.md`。",
+        )
+
     if not body_text:
         add_finding(
             findings,
@@ -510,6 +598,11 @@ def audit_target(target: str) -> AuditResult:
         )
 
     try:
+        security_result = scan_skill_directory(skill_dir)
+    except Exception as exc:
+        security_result = unavailable_security_result(f"scanner_error:{type(exc).__name__}")
+
+    try:
         raw_text = skill_file.read_text(encoding="utf-8")
     except OSError as exc:
         findings = [
@@ -534,6 +627,7 @@ def audit_target(target: str) -> AuditResult:
             resolved_from=resolved_from,
             findings=findings,
             checked_at=checked_at,
+            security_result=security_result,
         )
 
     findings: list[Finding] = []
@@ -562,6 +656,7 @@ def audit_target(target: str) -> AuditResult:
             resolved_from=resolved_from,
             findings=findings,
             checked_at=checked_at,
+            security_result=security_result,
         )
 
     try:
@@ -589,15 +684,31 @@ def audit_target(target: str) -> AuditResult:
             resolved_from=resolved_from,
             findings=findings,
             checked_at=checked_at,
+            security_result=security_result,
         )
 
-    findings.extend(validate_frontmatter(data, body, skill_file, skill_dir))
+    findings.extend(validate_frontmatter(data, body, skill_file, skill_dir, raw_text))
     return finalize_result(
         target_path=Path(target),
         skill_path=skill_file,
         resolved_from=resolved_from,
         findings=findings,
         checked_at=checked_at,
+        security_result=security_result,
+    )
+
+
+def unavailable_security_result(reason: str) -> SecurityScanResult:
+    return SecurityScanResult(
+        decision="review",
+        findings=(),
+        coverage=ScanCoverage(
+            selected_files=0,
+            skipped_files=0,
+            bytes_read=0,
+            incomplete=True,
+            skip_reasons={reason: 1},
+        ),
     )
 
 
@@ -607,10 +718,17 @@ def finalize_result(
     resolved_from: str,
     findings: list[Finding],
     checked_at: str,
+    security_result: SecurityScanResult | None = None,
 ) -> AuditResult:
+    if security_result is None:
+        security_result = unavailable_security_result("scan_not_run")
     severe_count = sum(1 for finding in findings if finding.severity == "severe")
     warning_count = sum(1 for finding in findings if finding.severity != "severe")
-    status = "不通过" if severe_count >= 2 else "通过"
+    status = (
+        "不通过"
+        if severe_count >= 2 or security_result.decision == "block"
+        else "通过"
+    )
     return AuditResult(
         target_path=target_path,
         skill_path=skill_path,
@@ -621,6 +739,9 @@ def finalize_result(
         warning_count=warning_count,
         findings=findings,
         checked_at=checked_at,
+        security_decision=security_result.decision,
+        security_findings=security_result.findings,
+        security_coverage=security_result.coverage,
     )
 
 
@@ -757,11 +878,19 @@ RULE_TRANSLATIONS: dict[str, tuple[str, str]] = {
         "The body has weak structure and is hard to scan.",
         "Use headings and short sections to organize workflow and rules.",
     ),
+    "quality.progressive-disclosure-budget": (
+        "`SKILL.md` exceeds the recommended progressive-disclosure size.",
+        "Keep `SKILL.md` under 500 lines and its body near 5000 tokens; move detailed content to referenced files.",
+    ),
+    "quality.file-references": (
+        "File references are not skill-root-relative or are nested too deeply.",
+        "Use paths relative to the skill root and keep references one directory deep, such as `references/REFERENCE.md`.",
+    ),
 }
 
 
 def map_status_text(result: AuditResult) -> tuple[str, str]:
-    is_fail = result.severe_count >= 2
+    is_fail = result.status == "不通过"
     return ("Fail", "不通过") if is_fail else ("Pass", "通过")
 
 
@@ -801,6 +930,18 @@ def build_html_report(result: AuditResult) -> str:
         ("Final Result", "最终结论", status_en, status_zh),
         ("Severe Findings", "严重问题", str(result.severe_count), str(result.severe_count)),
         ("Warnings", "一般问题", str(result.warning_count), str(result.warning_count)),
+        (
+            "Security Decision",
+            "安全处置",
+            result.security_decision,
+            result.security_decision,
+        ),
+        (
+            "Security Coverage",
+            "安全扫描覆盖",
+            f"{result.security_coverage.selected_files} files / {result.security_coverage.bytes_read} bytes",
+            f"{result.security_coverage.selected_files} 个文件 / {result.security_coverage.bytes_read} 字节",
+        ),
     ]
     summary_html = "".join(
         "<li>"
@@ -849,6 +990,48 @@ def build_html_report(result: AuditResult) -> str:
             "<p class='empty'><span class='lang lang-en'>No findings.</span>"
             "<span class='lang lang-zh'>未发现问题。</span></p>"
         )
+
+    if result.security_findings:
+        security_cards: list[str] = []
+        for finding in result.security_findings:
+            badge_class = (
+                "severe" if finding.risk_level in {"critical", "high"} else "warning"
+            )
+            location = finding.relative_path
+            if finding.line is not None:
+                location = f"{location}:{finding.line}"
+            security_cards.append(
+                "<article class='finding'>"
+                "<div class='finding-head'>"
+                f"<span class='badge {badge_class}'>{html.escape(finding.risk_level)}</span>"
+                f"<code>{html.escape(finding.rule_id)}</code>"
+                "</div>"
+                "<p><strong>"
+                "<span class='lang lang-en'>Evidence:</span>"
+                "<span class='lang lang-zh'>证据:</span>"
+                "</strong> "
+                f"<code>{html.escape(location)}</code> {html.escape(finding.redacted_evidence)}"
+                "</p>"
+                "<p><strong>"
+                "<span class='lang lang-en'>Recommendation:</span>"
+                "<span class='lang lang-zh'>处置建议:</span>"
+                "</strong> "
+                f"{html.escape(finding.recommendation)}"
+                "</p>"
+                "</article>"
+            )
+        security_findings_html = "".join(security_cards)
+    else:
+        security_findings_html = (
+            "<p class='empty'><span class='lang lang-en'>No security findings.</span>"
+            "<span class='lang lang-zh'>未发现安全风险。</span></p>"
+        )
+
+    coverage = result.security_coverage
+    coverage_note = (
+        f"selected={coverage.selected_files}, skipped={coverage.skipped_files}, "
+        f"bytes={coverage.bytes_read}, incomplete={str(coverage.incomplete).lower()}"
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1044,7 +1227,7 @@ def build_html_report(result: AuditResult) -> str:
         <span class="lang lang-zh">根据 Agent Skills specification 对目标 `SKILL.md` 进行静态规范与语义质量检查。</span>
       </p>
       <div class="status-row">
-        <div class="status-pill {'fail' if result.severe_count >= 2 else 'pass'}">
+        <div class="status-pill {'fail' if result.status == '不通过' else 'pass'}">
           <span class="lang lang-en">{html.escape(status_en)}</span>
           <span class="lang lang-zh">{html.escape(status_zh)}</span>
         </div>
@@ -1075,6 +1258,13 @@ def build_html_report(result: AuditResult) -> str:
     <section class="panel" style="margin-top: 24px;">
       <h2><span class="lang lang-en">Findings</span><span class="lang lang-zh">发现的问题</span></h2>
       {findings_html}
+    </section>
+    <section class="panel" style="margin-top: 24px;">
+      <h2><span class="lang lang-en">Security Findings</span><span class="lang lang-zh">安全发现</span></h2>
+      <p><strong><span class="lang lang-en">Decision:</span><span class="lang lang-zh">处置:</span></strong> {html.escape(result.security_decision)}</p>
+      <p><strong><span class="lang lang-en">Coverage:</span><span class="lang lang-zh">覆盖:</span></strong> {html.escape(coverage_note)}</p>
+      {security_findings_html}
+      <p class="empty" style="margin-top: 16px;"><span class="lang lang-en">Static scanning is bounded and cannot prove a Skill is safe.</span><span class="lang lang-zh">静态扫描受范围与预算限制，不能证明 Skill 绝对安全。</span></p>
     </section>
   </main>
   <script>
@@ -1113,6 +1303,13 @@ def main() -> int:
     print(f"结论: {result.status}")
     print(f"严重问题: {result.severe_count}")
     print(f"一般问题: {result.warning_count}")
+    print(f"安全处置: {result.security_decision}")
+    coverage = result.security_coverage
+    print(
+        "扫描覆盖: "
+        f"{coverage.selected_files} files, {coverage.bytes_read} bytes, "
+        f"{coverage.skipped_files} skipped, incomplete={str(coverage.incomplete).lower()}"
+    )
     print(f"HTML 报告: {report_path}")
     if args.fail_on_audit and result.status == "不通过":
         return 1

@@ -1,9 +1,9 @@
 # Skill Checker
 
-`skill-checker` is a reusable skill for checking whether a target `SKILL.md` follows the Agent Skills specification and for generating a static HTML report.
+`skill-checker` validates a target `SKILL.md`, performs a bounded static security scan of its Skill directory, and generates an HTML report.
 
 - Author: `oahcfly`
-- Version: `1.0.4`
+- Version: `1.1.0`
 - License: `MIT`
 
 ## When to use
@@ -17,7 +17,7 @@ Use this skill when the user asks an agent to:
 
 ## What it checks
 
-The checker focuses on `SKILL.md` only.
+Specification checks focus on `SKILL.md`:
 
 - YAML frontmatter presence and parseability
 - required fields such as `name` and `description`
@@ -26,10 +26,22 @@ The checker focuses on `SKILL.md` only.
 - whether `description` explains what the skill does and when to use it
 - whether the body provides enough actionable guidance
 
+Security checks scan common text and source files across the Skill directory:
+
+- prompt injection and instruction hijacking
+- exposed credentials, private keys, and contextual personal information
+- composed malicious-code patterns
+- executable and archive artifacts requiring review
+
+The local scanner never executes or imports target content, uses no network or model calls, and limits work to 150 files, 256 KiB per file, and 5 MiB total. It skips symlinks, binaries, archives, dependencies, build output, and caches.
+
 The final result is:
 
 - `pass` when severe findings are fewer than `2`
 - `fail` when severe findings are `2` or more
+- `fail` when the security decision is `block`
+
+Security decisions are `allow`, `review`, or `block`. A `high` or `critical` finding blocks publication, two `medium` findings block publication, and incomplete coverage requires review.
 
 ## Usage
 
@@ -67,12 +79,13 @@ The script prints:
 - final status
 - severe finding count
 - warning count
+- security decision and scan coverage
 - generated HTML report path
 
 Exit code behavior:
 
 - Default: exit code `0` when the command itself runs successfully, even if audit result is fail.
-- With `--fail-on-audit`: exit code `1` when severe findings are `2` or more.
+- With `--fail-on-audit`: exit code `1` when severe findings are `2` or more or the security decision is `block`.
 
 Generated reports under `reports/` are ignored by Git.
 
@@ -85,6 +98,7 @@ skill-checker/
   .gitignore
   agents/openai.yaml
   scripts/check_skill.py
+  scripts/security_scan.py
   references/specification-checklist.md
   tests/
 ```
@@ -98,4 +112,5 @@ python -m unittest discover -s .\tests -p "test_*.py"
 ## Notes
 
 - This skill intentionally keeps its current `metadata` rule strict.
+- Static scanning is bounded and cannot prove that a Skill is safe.
 - HTML reports are meant for review and sharing; they are not committed by default.

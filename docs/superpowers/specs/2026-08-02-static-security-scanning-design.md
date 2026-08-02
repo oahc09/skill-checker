@@ -4,7 +4,7 @@
 
 - Target release: `1.1.0`
 - Design date: `2026-08-02`
-- State: approved direction, awaiting written-spec review
+- State: implemented and verified
 
 ## Objective
 
